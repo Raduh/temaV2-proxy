@@ -50,7 +50,7 @@ http.createServer(function(request, response) {
 
     var mws_error_handler = function(error) {
         error.tema_component = "mws";
-        send_response(500, error);
+        send_response(error.status_code, error);
     };
 
     if (tema_math == "") {
@@ -116,7 +116,7 @@ function(query_str, mws_ids, from, size, result_callback, error_callback) {
                 raw_data += chunk;
             });
             response.on('end', function () {
-                json_data = JSON.parse(raw_data);
+                var json_data = JSON.parse(raw_data);
                 result_callback(json_data);
             });
         } else {
@@ -125,7 +125,7 @@ function(query_str, mws_ids, from, size, result_callback, error_callback) {
                 raw_data += chunk;
             });
             response.on('end', function () {
-                json_data = JSON.parse(raw_data);
+                var json_data = JSON.parse(raw_data);
                 error_callback(json_data);
             });
         }
@@ -170,13 +170,26 @@ function(query_str, limit, result_callback, error_callback) {
                 raw_data += chunk;
             });
             response.on('end', function () {
-                json_data = JSON.parse(raw_data);
+                var json_data = JSON.parse(raw_data);
                 result_callback(json_data);
+            });
+        } else {
+            var raw_data = '';
+            response.on('data', function (chunk) {
+                raw_data += chunk;
+            });
+            response.on('end', function () {
+                var json_data = {
+                    status_code : response.statusCode,
+                    data : raw_data
+                };
+                error_callback(json_data);
             });
         }
     });
 
     req.on('error', function(error) {
+        error.status_code = 500;
         error_callback(error);
     });
 
