@@ -1,35 +1,47 @@
 var http = require("http");
 
-
 var ES_HOST = "localhost";
 var ES_PORT = 9200;
-
 var MWS_HOST = "localhost";
 var MWS_PORT = 9090;
-var MAX_MWS_IDS = 100;
+var MAX_MWS_IDS = 1000;
 
 http.createServer(function(request, response) {
-    var headers = request.headers;
-    var tema_text = headers.text || "";
-    var tema_math = headers.math || "<mws:qvar/>";
-    var tema_from = headers.from || 0;
-    var tema_size = headers.size || 10;
+    var tema_text = request.headers.text || "";
+    var tema_math = request.headers.math || "";
+    var tema_from = request.headers.from || 0;
+    var tema_size = request.headers.size || 10;
 
-    mws_query(tema_math, MAX_MWS_IDS, function(mws_response) {
-        var mws_ids = mws_response.data;
-        es_query(tema_text, mws_ids, tema_from, tema_size, function(es_response) {
-            response.writeHead(200, {"Content-Type": "application/json"});
-            response.write(JSON.stringify(es_response));
-            response.end();
-        }, error_handler);
-    }, error_handler);
-
-    var error_handler = 
-    function(error) {
-        response.writeHead(500, {"Content-Type": "application/json"});
-        response.write(JSON.stringify(error));
+    var send_response = function(status_code, json_response) {
+        response.writeHead(status_code, {"Content-Type": "application/json"});
+        response.write(JSON.stringify(json_response));
         response.end();
     };
+
+    var es_response_handler = function(es_response) {
+        send_response(200, es_response);
+    }
+
+    var es_error_handler = function(error) {
+        error.tema_component = "elasticsearch";
+        send_response(500, error);
+    };
+
+    var mws_error_handler = function(error) {
+        error.tema_component = "mws";
+        send_response(500, error);
+    };
+
+    if (tema_math == "") {
+        es_query(tema_text, null, tema_from, tema_size,
+                 es_response_handler, es_error_handler);
+    } else {
+        mws_query(tema_math, MAX_MWS_IDS, function(mws_response) {
+            var mws_ids = mws_response.data;
+            es_query(tema_text, mws_ids, tema_from, tema_size,
+                     es_response_handler, es_error_handler);
+        }, mws_error_handler);
+    }
 }).listen(8888);
 
 
@@ -38,28 +50,33 @@ http.createServer(function(request, response) {
  */
 var es_query =
 function(query_str, mws_ids, from, size, result_callback, error_callback) {
-    var query = {
+    var bool_must_filters = [];
+    bool_must_filters.push({
+        "match" : {
+            "xhtml" : {
+                "query" : query_str,
+                "operator" : "and"
+            }
+        }
+    });
+    if (mws_ids != null) {
+        bool_must_filters.push({
+            "terms" : {
+                "ids" : mws_ids,
+                "minimum_match" : 1
+            }
+        });
+    }
+
+    var esquery_data = JSON.stringify({
         "from" : from,
         "size" : size,
         "query" : {
             "bool" : {
-                "must" : [{
-                    "terms" : {
-                        "ids" : mws_ids,
-                        minimum_match : 1
-                    }
-                }, {
-                    "match" : {
-                        "xhtml" : {
-                            "query" : query_str,
-                            "operator" : "and"
-                        }
-                    }
-                }]
+                "must" : bool_must_filters
             }
         }
-    };
-    var get_data = JSON.stringify(query);
+    });
     var esquery_options = {
         hostname: ES_HOST,
         port: ES_PORT,
@@ -67,7 +84,7 @@ function(query_str, mws_ids, from, size, result_callback, error_callback) {
         method: 'GET',
         headers: {
             'Content-Type': 'application/xml',
-            'Content-Length': get_data.length
+            'Content-Length': esquery_data.length
         }
     };
 
@@ -97,7 +114,7 @@ function(query_str, mws_ids, from, size, result_callback, error_callback) {
         error_callback(error);
     });
 
-    req.write(get_data);
+    req.write(esquery_data);
     req.end();
 };
 
@@ -106,8 +123,7 @@ function(query_str, mws_ids, from, size, result_callback, error_callback) {
  */
 var mws_query =
 function(query_str, limit, result_callback, error_callback) {
-
-    var post_data =
+    var mwsquery_data =
         '<mws:query' +
             ' limitmin="0"' +
             ' answsize="' + limit + '"' +
@@ -115,7 +131,6 @@ function(query_str, limit, result_callback, error_callback) {
             '<mws:expr>' +
                 query_str +
             '</mws:expr></mws:query>';
-
     var mwsquery_options = {
         hostname: MWS_HOST,
         port: MWS_PORT,
@@ -123,7 +138,7 @@ function(query_str, limit, result_callback, error_callback) {
         method: 'POST',
         headers: {
             'Content-Type': 'application/xml',
-            'Content-Length': post_data.length
+            'Content-Length': mwsquery_data.length
         }
     };
 
@@ -144,6 +159,6 @@ function(query_str, limit, result_callback, error_callback) {
         error_callback(error);
     });
 
-    req.write(post_data);
+    req.write(mwsquery_data);
     req.end();
 };
