@@ -1,5 +1,0 @@
-#!/bin/sh -e
-
-PROJECT_DIR="`dirname $0`/.."
-
-node $PROJECT_DIR/tema-proxy.js
