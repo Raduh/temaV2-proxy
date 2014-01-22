@@ -34,7 +34,10 @@ http.createServer(function(request, response) {
     var tema_size = request.headers.size || 10;
 
     var send_response = function(status_code, json_response) {
-        response.writeHead(status_code, {"Content-Type": "application/json"});
+        response.writeHead(status_code, {
+            "Content-Type": "application/json",
+            "Access-Control-Allow-Origin" : "*"
+        });
         response.write(JSON.stringify(json_response));
         response.end();
     };
