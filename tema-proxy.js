@@ -20,6 +20,7 @@ along with TeMaSearch.  If not, see <http://www.gnu.org/licenses/>.
 */
 
 var http = require("http");
+var url = require('url');
 
 var ES_HOST = "localhost";
 var ES_PORT = 9200;
@@ -28,10 +29,12 @@ var MWS_PORT = 9090;
 var MAX_MWS_IDS = 1000;
 
 http.createServer(function(request, response) {
-    var tema_text = request.headers.text || "";
-    var tema_math = request.headers.math || "";
-    var tema_from = request.headers.from || 0;
-    var tema_size = request.headers.size || 10;
+    var url_parts = url.parse(request.url, true);
+    var q = url_parts.query;
+    var tema_text = q.text || "";
+    var tema_math = q.math || "";
+    var tema_from = q.from || 0;
+    var tema_size = q.size || 10;
 
     var send_response = function(status_code, json_response) {
         response.writeHead(status_code, {
