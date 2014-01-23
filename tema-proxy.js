@@ -78,14 +78,16 @@ http.createServer(function(request, response) {
 var es_query =
 function(query_str, mws_ids, from, size, result_callback, error_callback) {
     var bool_must_filters = [];
-    bool_must_filters.push({
-        "match" : {
-            "xhtml" : {
-                "query" : query_str,
-                "operator" : "and"
+    if (query_str.trim() != "") {
+        bool_must_filters.push({
+            "match" : {
+                "xhtml" : {
+                    "query" : query_str,
+                    "operator" : "and"
+                }
             }
-        }
-    });
+        });
+    }
     if (mws_ids != null) {
         bool_must_filters.push({
             "terms" : {
