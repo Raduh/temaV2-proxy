@@ -38,7 +38,7 @@ http.createServer(function(request, response) {
 
     var send_response = function(status_code, json_response) {
         response.writeHead(status_code, {
-            "Content-Type": "application/json",
+            "Content-Type" : "application/json; charset=utf-8",
             "Access-Control-Allow-Origin" : "*"
         });
         response.write(JSON.stringify(json_response));
@@ -113,7 +113,7 @@ function(query_str, mws_ids, from, size, result_callback, error_callback) {
         method: 'GET',
         headers: {
             'Content-Type': 'application/xml',
-            'Content-Length': esquery_data.length
+            'Content-Length': Buffer.byteLength(esquery_data, 'utf8')
         }
     };
 
@@ -167,7 +167,7 @@ function(query_str, limit, result_callback, error_callback) {
         method: 'POST',
         headers: {
             'Content-Type': 'application/xml',
-            'Content-Length': mwsquery_data.length
+            'Content-Length': Buffer.byteLength(mwsquery_data, 'utf8')
         }
     };
 
