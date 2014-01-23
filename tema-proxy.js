@@ -37,6 +37,9 @@ http.createServer(function(request, response) {
     var tema_size = q.size || 10;
 
     var send_response = function(status_code, json_response) {
+        if (status_code >= 500) {
+            console.log(json_response);
+        }
         response.writeHead(status_code, {
             "Content-Type" : "application/json; charset=utf-8",
             "Access-Control-Allow-Origin" : "*"
