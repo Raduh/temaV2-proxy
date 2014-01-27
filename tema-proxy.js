@@ -22,6 +22,8 @@ along with TeMaSearch.  If not, see <http://www.gnu.org/licenses/>.
 var http = require("http");
 var url = require('url');
 
+var TEMA_PROXY_PORT = 8889;
+
 var ES_HOST = "localhost";
 var ES_PORT = 9200;
 var MWS_HOST = "localhost";
@@ -72,7 +74,7 @@ http.createServer(function(request, response) {
                      es_response_handler, es_error_handler);
         }, mws_error_handler);
     }
-}).listen(8888);
+}).listen(TEMA_PROXY_PORT);
 
 
 /**
@@ -107,7 +109,17 @@ function(query_str, mws_ids, from, size, result_callback, error_callback) {
             "bool" : {
                 "must" : bool_must_filters
             }
-        }
+        },
+        "highlight" :  {
+            "pre_tags" : ["<div class=\"text-highlight\">"],
+            "post_tags" : ["</div>"],
+            "fields" : {
+                "xhtml" : {
+                    "number_of_fragments" : 0
+                }
+            }
+        },
+        "fields" : [ "_source.id_mappings" ]
     });
     var esquery_options = {
         hostname: ES_HOST,
@@ -128,7 +140,12 @@ function(query_str, mws_ids, from, size, result_callback, error_callback) {
             });
             response.on('end', function () {
                 var json_data = JSON.parse(raw_data);
-                result_callback(json_data);
+                var json_wrapped_data = wrap_es_result(json_data, mws_ids);
+                if (json_wrapped_data != null) {
+                    result_callback(json_wrapped_data);
+                } else {
+                    result_callback(json_data);
+                }
             });
         } else {
             var raw_data = '';
@@ -206,4 +223,42 @@ function(query_str, limit, result_callback, error_callback) {
 
     req.write(mwsquery_data);
     req.end();
+};
+
+var wrap_es_result = function(es_result, mws_ids) {
+    try {
+        var hits = [];
+        for (var i = 0; i < es_result.hits.hits.length; i++) {
+            var xhtml = es_result.hits.hits[i].highlight.xhtml[0];
+            var math_ids = [];
+            if (mws_ids != null) {
+                var all_math_ids =
+                    es_result.hits.hits[i].fields['_source.id_mappings'];
+                for (var j = 0; j < all_math_ids.length; j++) {
+                    if (mws_ids.indexOf(all_math_ids[j].id) > -1) {
+                        math_ids.push({
+                            "url" : all_math_ids[j].url,
+                            "xpath" : all_math_ids[j].xpath
+                        });
+                    }
+                }
+            }
+            hits.push({
+                "math_ids" : math_ids,
+                "xhtml" : xhtml
+            });
+        }
+
+        var result = {
+            "took" : es_result.took,
+            "timed_out" : es_result.timed_out,
+            "total" : es_result.hits.total,
+            "hits" : hits
+        };
+
+        return result;
+    } catch (e) {
+        console.log(e);
+        return null;
+    }
 };
