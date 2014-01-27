@@ -250,7 +250,9 @@ var wrap_es_result = function(es_result, query_str, mws_ids) {
                 }
             }
             hits.push({
-                "text" : query_str,
+                "text" : query_str.split(' ').filter(
+                    function(x) { return x != ''; }
+                    ),
                 "math_ids" : math_ids,
                 "xhtml" : xhtml
             });
