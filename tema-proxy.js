@@ -28,7 +28,9 @@ var ES_HOST = "localhost";
 var ES_PORT = 9200;
 var MWS_HOST = "localhost";
 var MWS_PORT = 9090;
+
 var MAX_MWS_IDS = 1000;
+var MAX_DOC_SIZE_CHARS = 10000;
 
 http.createServer(function(request, response) {
     var url_parts = url.parse(request.url, true);
@@ -115,7 +117,9 @@ function(query_str, mws_ids, from, size, result_callback, error_callback) {
             "post_tags" : ["</div>"],
             "fields" : {
                 "xhtml" : {
-                    "number_of_fragments" : 0
+                    "number_of_fragments" : 0,  // return non-fragmented source
+                    "no_match_size" : MAX_DOC_SIZE_CHARS
+                        // return even if there is no highlight
                 }
             }
         },
