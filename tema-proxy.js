@@ -112,6 +112,7 @@ function(query_str, mws_ids, from, size, result_callback, error_callback) {
                 "must" : bool_must_filters
             }
         },
+        /*
         "highlight" :  {
             "pre_tags" : ["<div class=\"text-highlight\">"],
             "post_tags" : ["</div>"],
@@ -123,7 +124,8 @@ function(query_str, mws_ids, from, size, result_callback, error_callback) {
                 }
             }
         },
-        "fields" : [ "_source.id_mappings" ]
+        */
+        "fields" : [ "_source.id_mappings", "_source.xhtml" ]
     });
     var esquery_options = {
         hostname: ES_HOST,
@@ -144,7 +146,7 @@ function(query_str, mws_ids, from, size, result_callback, error_callback) {
             });
             response.on('end', function () {
                 var json_data = JSON.parse(raw_data);
-                var json_wrapped_data = wrap_es_result(json_data, mws_ids);
+                var json_wrapped_data = wrap_es_result(json_data, query_str, mws_ids);
                 if (json_wrapped_data != null) {
                     result_callback(json_wrapped_data);
                 } else {
@@ -229,11 +231,11 @@ function(query_str, limit, result_callback, error_callback) {
     req.end();
 };
 
-var wrap_es_result = function(es_result, mws_ids) {
+var wrap_es_result = function(es_result, query_str, mws_ids) {
     try {
         var hits = [];
         for (var i = 0; i < es_result.hits.hits.length; i++) {
-            var xhtml = es_result.hits.hits[i].highlight.xhtml[0];
+            var xhtml = es_result.hits.hits[i].fields['_source.xhtml'];
             var math_ids = [];
             if (mws_ids != null) {
                 var all_math_ids =
@@ -248,6 +250,7 @@ var wrap_es_result = function(es_result, mws_ids) {
                 }
             }
             hits.push({
+                "text" : query_str,
                 "math_ids" : math_ids,
                 "xhtml" : xhtml
             });
