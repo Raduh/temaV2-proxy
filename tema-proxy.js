@@ -23,7 +23,6 @@ var http = require("http");
 var url = require('url');
 
 var TEMA_PROXY_PORT = 8889;
-
 var ES_HOST = "localhost";
 var ES_PORT = 9200;
 var MWS_HOST = "localhost";
@@ -67,12 +66,14 @@ http.createServer(function(request, response) {
     };
 
     if (tema_math == "") {
-        es_query(tema_text, null, tema_from, tema_size,
+        es_query(tema_text, null, null, tema_from, tema_size,
                  es_response_handler, es_error_handler);
     } else {
         mws_query(tema_math, MAX_MWS_IDS, function(mws_response) {
+            console.log(mws_response);
             var mws_ids = mws_response.data;
-            es_query(tema_text, mws_ids, tema_from, tema_size,
+            var mws_qvar_data = mws_response.qvars;
+            es_query(tema_text, mws_ids, mws_qvar_data, tema_from, tema_size,
                      es_response_handler, es_error_handler);
         }, mws_error_handler);
     }
@@ -83,7 +84,7 @@ http.createServer(function(request, response) {
  * @callback result_callback(json_data)
  */
 var es_query =
-function(query_str, mws_ids, from, size, result_callback, error_callback) {
+function(query_str, mws_ids, mws_qvar_data, from, size, result_callback, error_callback) {
     var bool_must_filters = [];
     if (query_str.trim() != "") {
         bool_must_filters.push({
@@ -146,7 +147,7 @@ function(query_str, mws_ids, from, size, result_callback, error_callback) {
             });
             response.on('end', function () {
                 var json_data = JSON.parse(raw_data);
-                var json_wrapped_data = wrap_es_result(json_data, query_str, mws_ids);
+                var json_wrapped_data = wrap_es_result(json_data, query_str, mws_ids, mws_qvar_data);
                 if (json_wrapped_data != null) {
                     result_callback(json_wrapped_data);
                 } else {
@@ -231,7 +232,7 @@ function(query_str, limit, result_callback, error_callback) {
     req.end();
 };
 
-var wrap_es_result = function(es_result, query_str, mws_ids) {
+var wrap_es_result = function(es_result, query_str, mws_ids, mws_qvar_data) {
     try {
         var hits = [];
         for (var i = 0; i < es_result.hits.hits.length; i++) {
@@ -262,6 +263,7 @@ var wrap_es_result = function(es_result, query_str, mws_ids) {
             "took" : es_result.took,
             "timed_out" : es_result.timed_out,
             "total" : es_result.hits.total,
+            "qvars" : mws_qvar_data || [],
             "hits" : hits
         };
 
