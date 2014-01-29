@@ -21,6 +21,7 @@ along with TeMaSearch.  If not, see <http://www.gnu.org/licenses/>.
 
 var http = require("http");
 var url = require('url');
+var util = require('util');
 
 var TEMA_PROXY_PORT = 8889;
 var ES_HOST = "localhost";
@@ -42,6 +43,7 @@ http.createServer(function(request, response) {
     var send_response = function(status_code, json_response) {
         if (status_code >= 500) {
             console.log(json_response);
+            util.log(json_response);
         }
         response.writeHead(status_code, {
             "Content-Type" : "application/json; charset=utf-8",
@@ -70,7 +72,6 @@ http.createServer(function(request, response) {
                  es_response_handler, es_error_handler);
     } else {
         mws_query(tema_math, MAX_MWS_IDS, function(mws_response) {
-            console.log(mws_response);
             var mws_ids = mws_response.data;
             var mws_qvar_data = mws_response.qvars;
             es_query(tema_text, mws_ids, mws_qvar_data, tema_from, tema_size,
@@ -149,8 +150,10 @@ function(query_str, mws_ids, mws_qvar_data, from, size, result_callback, error_c
                 var json_data = JSON.parse(raw_data);
                 var json_wrapped_data = wrap_es_result(json_data, query_str, mws_ids, mws_qvar_data);
                 if (json_wrapped_data != null) {
+                    util.log("Query returned " + json_wrapped_data.hits.length + " hits.");
                     result_callback(json_wrapped_data);
                 } else {
+                    util.log("Error for elastic search response: " + JSON.stringify(json_data));
                     result_callback(json_data);
                 }
             });
@@ -270,6 +273,7 @@ var wrap_es_result = function(es_result, query_str, mws_ids, mws_qvar_data) {
         return result;
     } catch (e) {
         console.log(e);
+        util.log(e);
         return null;
     }
 };
