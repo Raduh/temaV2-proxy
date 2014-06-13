@@ -24,10 +24,10 @@ var url = require('url');
 var util = require('util');
 
 var TEMA_PROXY_PORT = 8889;
-var ES_HOST = "localhost";
+var ES_HOST = "212.201.44.161";
 var ES_PORT = 9200;
-var MWS_HOST = "localhost";
-var MWS_PORT = 9090;
+var MWS_HOST = "212.201.44.161";
+var MWS_PORT = 10001;
 
 var MAX_MWS_IDS = 1000;
 var MAX_DOC_SIZE_CHARS = 10000;
@@ -67,13 +67,20 @@ http.createServer(function(request, response) {
         send_response(error.status_code, error);
     };
 
+    var echo_response = function(data) {
+        console.log(data);
+        send_response(200, data);
+    }
+
     if (tema_math == "") {
         es_query(tema_text, null, null, tema_from, tema_size,
                  es_response_handler, es_error_handler);
     } else {
         mws_query(tema_math, MAX_MWS_IDS, function(mws_response) {
-            var mws_ids = mws_response.data;
-            var mws_qvar_data = mws_response.qvars;
+//            var mws_ids = mws_response.data;
+//            var mws_qvar_data = mws_response.qvars;
+            var mws_ids = mws_response;
+            var mws_qvar_data = '';
             es_query(tema_text, mws_ids, mws_qvar_data, tema_from, tema_size,
                      es_response_handler, es_error_handler);
         }, mws_error_handler);
@@ -86,23 +93,34 @@ http.createServer(function(request, response) {
  */
 var es_query =
 function(query_str, mws_ids, mws_qvar_data, from, size, result_callback, error_callback) {
+    var source_filters = [ "metadata" ];
     var bool_must_filters = [];
     if (query_str.trim() != "") {
         bool_must_filters.push({
             "match" : {
-                "xhtml" : {
+                "text" : {
                     "query" : query_str,
                     "operator" : "and"
                 }
             }
         });
     }
+    /*
+    bool_must_filters.push({
+        "match" : {
+            "_id" : "xgsyXy2ZQbevq53LwsMEcQ"
+        }
+    });
+    */
     if (mws_ids != null) {
         bool_must_filters.push({
             "terms" : {
-                "ids" : mws_ids,
+                "mws_ids" : mws_ids,
                 "minimum_match" : 1
             }
+        });
+        mws_ids.map(function(id) {
+            source_filters.push("mws_id." + id);
         });
     }
 
@@ -116,7 +134,7 @@ function(query_str, mws_ids, mws_qvar_data, from, size, result_callback, error_c
         },
         /*
         "highlight" :  {
-            "pre_tags" : ["<div class=\"text-highlight\">"],
+            "pre_tags" : ["<div class=\"search-highlight\">"],
             "post_tags" : ["</div>"],
             "fields" : {
                 "xhtml" : {
@@ -127,12 +145,12 @@ function(query_str, mws_ids, mws_qvar_data, from, size, result_callback, error_c
             }
         },
         */
-        "fields" : [ "_source.id_mappings", "_source.xhtml" ]
+        "_source" : source_filters
     });
     var esquery_options = {
         hostname: ES_HOST,
         port: ES_PORT,
-        path: '/tema-search/doc/_search',
+        path: '/tema/doc/_search',
         method: 'GET',
         headers: {
             'Content-Type': 'application/xml',
@@ -186,7 +204,8 @@ function(query_str, limit, result_callback, error_callback) {
         '<mws:query' +
             ' limitmin="0"' +
             ' answsize="' + limit + '"' +
-            ' totalreq="yes">' +
+            ' output="mws-ids"' +
+            ' totalreq="no">' +
             '<mws:expr>' +
                 query_str +
             '</mws:expr></mws:query>';
