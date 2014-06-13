@@ -22,6 +22,7 @@ along with TeMaSearch.  If not, see <http://www.gnu.org/licenses/>.
 var http = require("http");
 var url = require('url');
 var util = require('util');
+var qs = require('querystring');
 
 var TEMA_PROXY_PORT = 8889;
 var ES_HOST = "212.201.44.161";
@@ -32,58 +33,80 @@ var MWS_PORT = 10001;
 var MAX_MWS_IDS = 1000;
 var MAX_DOC_SIZE_CHARS = 10000;
 
+
+
 http.createServer(function(request, response) {
-    var url_parts = url.parse(request.url, true);
-    var q = url_parts.query;
-    var tema_text = q.text || "";
-    var tema_math = q.math || "";
-    var tema_from = q.from || 0;
-    var tema_size = q.size || 10;
+    var process_query = function (query) {
+        var tema_text = query.text || "";
+        var tema_math = query.math || "";
+        var tema_from = query.from || 0;
+        var tema_size = query.size || 10;
 
-    var send_response = function(status_code, json_response) {
-        if (status_code >= 500) {
-            console.log(json_response);
-            util.log(json_response);
+        var send_response = function(status_code, json_response) {
+            if (status_code >= 500) {
+                console.log(json_response);
+                util.log(json_response);
+            }
+            response.writeHead(status_code, {
+                "Content-Type" : "application/json; charset=utf-8",
+                "Access-Control-Allow-Origin" : "*"
+            });
+            response.write(JSON.stringify(json_response));
+            response.end();
+        };
+
+        var es_response_handler = function(es_response) {
+            send_response(200, es_response);
         }
-        response.writeHead(status_code, {
-            "Content-Type" : "application/json; charset=utf-8",
-            "Access-Control-Allow-Origin" : "*"
-        });
-        response.write(JSON.stringify(json_response));
-        response.end();
-    };
 
-    var es_response_handler = function(es_response) {
-        send_response(200, es_response);
-    }
+        var es_error_handler = function(error) {
+            error.tema_component = "elasticsearch";
+            send_response(500, error);
+        };
 
-    var es_error_handler = function(error) {
-        error.tema_component = "elasticsearch";
-        send_response(500, error);
-    };
+        var mws_error_handler = function(error) {
+            error.tema_component = "mws";
+            send_response(error.status_code, error);
+        };
 
-    var mws_error_handler = function(error) {
-        error.tema_component = "mws";
-        send_response(error.status_code, error);
-    };
+        var echo_response = function(data) {
+            console.log(data);
+            send_response(200, data);
+        }
 
-    var echo_response = function(data) {
-        console.log(data);
-        send_response(200, data);
-    }
-
-    if (tema_math == "") {
-        es_query(tema_text, null, null, tema_from, tema_size,
-                 es_response_handler, es_error_handler);
-    } else {
-        mws_query(tema_math, MAX_MWS_IDS, function(mws_response) {
-//            var mws_ids = mws_response.data;
+        if (tema_math == "") {
+            es_query(tema_text, null, null, tema_from, tema_size,
+                es_response_handler, es_error_handler);
+        } else {
+            mws_query(tema_math, MAX_MWS_IDS, function(mws_response) {
+//            var mws_ids = mws_response.data; TODO
 //            var mws_qvar_data = mws_response.qvars;
-            var mws_ids = mws_response;
-            var mws_qvar_data = '';
-            es_query(tema_text, mws_ids, mws_qvar_data, tema_from, tema_size,
-                     es_response_handler, es_error_handler);
-        }, mws_error_handler);
+                var mws_ids = mws_response;
+                var mws_qvar_data = '';
+                es_query(tema_text, mws_ids, mws_qvar_data, tema_from, tema_size,
+                    es_response_handler, es_error_handler);
+            }, mws_error_handler);
+        }
+    }
+
+    if (request.method == "GET") {
+        var url_parts = url.parse(request.url, true);
+        process_query(url_parts.query);
+    } else if (request.method == "POST") {
+        var body = "";
+
+        request.on("data", function (data) {
+            body += data;
+        });
+
+        request.on("end", function () {
+            var query = qs.parse(body);
+            process_query(query);
+        });
+
+        request.on("error", function (e) {
+            // TODO
+        });
     }
 }).listen(TEMA_PROXY_PORT);
 
