@@ -154,7 +154,7 @@ function(query_str, mws_ids, mws_qvar_data, from, size, result_callback, error_c
             "bool" : {
                 "must" : bool_must_filters
             }
-        },
+        }
         /*
         "highlight" :  {
             "pre_tags" : ["<div class=\"search-highlight\">"],
@@ -168,7 +168,7 @@ function(query_str, mws_ids, mws_qvar_data, from, size, result_callback, error_c
             }
         },
         */
-        "_source" : source_filters
+    //    "_source" : source_filters
     });
     var esquery_options = {
         hostname: ES_HOST,
@@ -278,10 +278,11 @@ function(query_str, limit, result_callback, error_callback) {
 };
 
 var wrap_es_result = function(es_result, query_str, mws_ids, mws_qvar_data) {
+    return null; // disable for now
     try {
         var hits = [];
         for (var i = 0; i < es_result.hits.hits.length; i++) {
-            var xhtml = es_result.hits.hits[i].fields['_source.xhtml'];
+            //var xhtml = es_result.hits.hits[i].fields['_source.xhtml'];
             var math_ids = [];
             if (mws_ids != null) {
                 var all_math_ids =
