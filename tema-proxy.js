@@ -123,7 +123,8 @@ function(query_str, mws_ids, mws_qvar_data, from, size, result_callback, error_c
             "match" : {
                 "text" : {
                     "query" : query_str,
-                    "operator" : "and"
+                    "minimum_should_match" : "2",
+                    "operator" : "or"
                 }
             }
         });
