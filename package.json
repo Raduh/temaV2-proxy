@@ -1,0 +1,12 @@
+{
+    "name" : "TeMaProxy",
+    "version" : "0.1.0",
+    "repository" : {
+        "type" : "git",
+        "url" : "http://github.com/KWARC/tema-proxy.git"
+    },
+    "dependencies" : {
+        "async" : ">=0.6.0"
+    },
+    "private": true
+}

@@ -19,21 +19,21 @@ along with TeMaSearch.  If not, see <http://www.gnu.org/licenses/>.
 
 */
 
+var assert = require('assert');
+var async = require('async');
 var http = require("http");
 var url = require('url');
 var util = require('util');
 var qs = require('querystring');
+var es = require('./elasticsearch.js');
 
 var TEMA_PROXY_PORT = 8889;
-var ES_HOST = "212.201.44.161";
-var ES_PORT = 9200;
-var MWS_HOST = "212.201.44.161";
+//var MWS_HOST = "212.201.44.161";
+var MWS_HOST = "localhost";
 var MWS_PORT = 10001;
 
 var MAX_MWS_IDS = 1000;
-var MAX_DOC_SIZE_CHARS = 10000;
-
-
+var MATH_PREFIX = "math";
 
 http.createServer(function(request, response) {
     var process_query = function (query) {
@@ -68,11 +68,6 @@ http.createServer(function(request, response) {
             error.tema_component = "mws";
             send_response(error.status_code, error);
         };
-
-        var echo_response = function(data) {
-            console.log(data);
-            send_response(200, data);
-        }
 
         if (tema_math == "") {
             es_query(tema_text, null, null, tema_from, tema_size,
@@ -116,7 +111,7 @@ http.createServer(function(request, response) {
  */
 var es_query =
 function(query_str, mws_ids, mws_qvar_data, from, size, result_callback, error_callback) {
-    var source_filters = [ "metadata" ];
+    var source_filters = [];
     var bool_must_filters = [];
     if (query_str.trim() != "") {
         bool_must_filters.push({
@@ -129,13 +124,6 @@ function(query_str, mws_ids, mws_qvar_data, from, size, result_callback, error_c
             }
         });
     }
-    /*
-    bool_must_filters.push({
-        "match" : {
-            "_id" : "xgsyXy2ZQbevq53LwsMEcQ"
-        }
-    });
-    */
     if (mws_ids != null) {
         bool_must_filters.push({
             "terms" : {
@@ -146,77 +134,122 @@ function(query_str, mws_ids, mws_qvar_data, from, size, result_callback, error_c
         mws_ids.map(function(id) {
             source_filters.push("mws_id." + id);
         });
+    } else {
+        source_filters = false;
     }
 
-    var esquery_data = JSON.stringify({
+    var esquery = JSON.stringify({
         "from" : from,
         "size" : size,
         "query" : {
             "bool" : {
                 "must" : bool_must_filters
             }
-        }
-        /*
-        "highlight" :  {
-            "pre_tags" : ["<div class=\"search-highlight\">"],
-            "post_tags" : ["</div>"],
-            "fields" : {
-                "xhtml" : {
-                    "number_of_fragments" : 0,  // return non-fragmented source
-                    "no_match_size" : MAX_DOC_SIZE_CHARS
-                        // return even if there is no highlight
-                }
-            }
         },
-        */
-    //    "_source" : source_filters
+        "_source" : source_filters
     });
-    var esquery_options = {
-        hostname: ES_HOST,
-        port: ES_PORT,
-        path: '/tema/doc/_search',
-        method: 'GET',
-        headers: {
-            'Content-Type': 'application/xml',
-            'Content-Length': Buffer.byteLength(esquery_data, 'utf8')
-        }
-    };
-
-    var req = http.request(esquery_options, function(response) {
-        if (response.statusCode == 200) {
-            var raw_data = '';
-            response.on('data', function (chunk) {
-                raw_data += chunk;
-            });
-            response.on('end', function () {
-                var json_data = JSON.parse(raw_data);
-                var json_wrapped_data = wrap_es_result(json_data, query_str, mws_ids, mws_qvar_data);
-                if (json_wrapped_data != null) {
-                    util.log("Query returned " + json_wrapped_data.hits.length + " hits.");
-                    result_callback(json_wrapped_data);
-                } else {
-                    util.log("Error for elastic search response: " + JSON.stringify(json_data));
-                    result_callback(json_data);
+    es.query(esquery, function(result) {
+        var math_elems_per_doc = [];
+        result.hits.hits.map(function(hit) {
+            var math_elems = [];
+            try {
+                var mws_ids = hit._source.mws_id;
+                for (var mws_id in mws_ids) {
+                    var mws_id_data = mws_ids[mws_id];
+                    for (var math_elem in mws_id_data) {
+                        var simple_mathelem = simplify_mathelem(math_elem);
+                        var xpath = mws_id_data[math_elem].xpath;
+                        math_elems.push({ "math_id": simple_mathelem, "xpath": xpath});
+                    }
                 }
+            } catch (e) {
+                // ignore
+            }
+            math_elems_per_doc.push({"doc_id" : hit._id, "maths" : math_elems});
+        });
+
+        es_query_document_details(math_elems_per_doc, query_str, function(docs_arr) {
+            result_callback({
+                "total" : result.hits.total,
+                "hits" : docs_arr
             });
-        } else {
-            var raw_data = '';
-            response.on('data', function (chunk) {
-                raw_data += chunk;
+        }, error_callback);
+    }, error_callback);
+};
+
+var es_query_document_details = function(docs_with_math, query_words, result_callback, error_callback) {
+    var callbacks = [];
+    docs_with_math.map(function(doc_data) {
+        callbacks.push(function(callback) {
+            var bool_must_filters = [{"match": {"_id": doc_data["doc_id"]}}];
+            var source_filter = ["metadata"];
+            if (query_words.trim() != "") {
+                bool_must_filters.push({
+                    "match" : {
+                        "text" : {
+                            "query" : query_words,
+                            "minimum_should_match" : "2",
+                            "operator" : "or"
+                        }
+                    }
+                });
+            }
+            doc_data["maths"].map(function (math_elem) {
+                bool_must_filters.push({
+                    "match": {
+                        "text": {
+                            "query": MATH_PREFIX + math_elem.math_id,
+                            "analyzer": "keyword"
+                        }
+                    }
+                });
+                source_filter.push("math." + math_elem.math_id);
             });
-            response.on('end', function () {
-                var json_data = JSON.parse(raw_data);
-                error_callback(json_data);
+
+            var esquery = JSON.stringify({
+                "from": 0,
+                "size": 1,
+                "query": {
+                    "bool": {
+                        "must": bool_must_filters
+                    }
+                },
+                "highlight": {
+                    "pre_tags": ["<div class=\"tema-highlight\">"],
+                    "post_tags": ["</div>"],
+                    "fields": {
+                        "text": {}
+                    }
+                },
+                "_source": source_filter
             });
+            es.query(esquery, function (result) {
+                var hit = result.hits.hits[0];
+                var doc = {
+                    "id" : doc_data["doc_id"],
+                    "score": hit._score,
+                    "metadata": hit._source.metadata,
+                    "snippets": hit.highlight.text,
+                    "maths": {}
+                };
+                doc_data["maths"].map(function (math_elem) {
+                    doc.maths[math_elem.math_id] = {
+                        "xml": hit._source.math[math_elem.math_id],
+                        "xpath": math_elem.xpath };
+                });
+                callback(null, doc);
+            }, function(error) {
+                callback(error, null);
+            });
+        });
+    });
+    async.parallel(callbacks, function(err, results) {
+        if (err != null) {
+            error_callback(err);
+            return;
         }
+        result_callback(results);
     });
-
-    req.on('error', function(error) {
-        error_callback(error);
-    });
-
-    req.write(esquery_data);
-    req.end();
 };
 
 /**
@@ -278,46 +311,7 @@ function(query_str, limit, result_callback, error_callback) {
     req.end();
 };
 
-var wrap_es_result = function(es_result, query_str, mws_ids, mws_qvar_data) {
-    return null; // disable for now
-    try {
-        var hits = [];
-        for (var i = 0; i < es_result.hits.hits.length; i++) {
-            //var xhtml = es_result.hits.hits[i].fields['_source.xhtml'];
-            var math_ids = [];
-            if (mws_ids != null) {
-                var all_math_ids =
-                    es_result.hits.hits[i].fields['_source.id_mappings'];
-                for (var j = 0; j < all_math_ids.length; j++) {
-                    if (mws_ids.indexOf(all_math_ids[j].id) > -1) {
-                        math_ids.push({
-                            "url" : all_math_ids[j].url,
-                            "xpath" : all_math_ids[j].xpath
-                        });
-                    }
-                }
-            }
-            hits.push({
-                "text" : query_str.split(' ').filter(
-                    function(x) { return x != ''; }
-                    ),
-                "math_ids" : math_ids,
-                "xhtml" : xhtml
-            });
-        }
-
-        var result = {
-            "took" : es_result.took,
-            "timed_out" : es_result.timed_out,
-            "total" : es_result.hits.total,
-            "qvars" : mws_qvar_data || [],
-            "hits" : hits
-        };
-
-        return result;
-    } catch (e) {
-        console.log(e);
-        util.log(e);
-        return null;
-    }
+var simplify_mathelem = function(mws_id) {
+    var simplified_arr = mws_id.split("#");
+    return simplified_arr[simplified_arr.length - 1];
 };
