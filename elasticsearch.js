@@ -1,16 +1,14 @@
+
 var ElasticSearch = exports;
 
+var config = require("./config");
 var http = require("http");
-
-//var ES_HOST = "212.201.44.161";
-var ES_HOST = "localhost";
-var ES_PORT = 9200;
 
 ElasticSearch.query = function (query, result_callback, error_callback) {
     var esquery_options = {
-        hostname: ES_HOST,
-        port: ES_PORT,
-        path: '/tema/doc/_search',
+        hostname: config.ES_HOST,
+        port: config.ES_PORT,
+        path: '/' + config.ES_INDEX + '/doc/_search',
         method: 'GET',
         headers: {
             'Content-Type': 'application/json',

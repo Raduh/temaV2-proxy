@@ -19,20 +19,16 @@ along with TeMaSearch.  If not, see <http://www.gnu.org/licenses/>.
 
 */
 
+var config = require('./config.js');
+var es = require('./elasticsearch.js');
+
 var assert = require('assert');
 var async = require('async');
 var http = require("http");
 var url = require('url');
 var util = require('util');
 var qs = require('querystring');
-var es = require('./elasticsearch.js');
 
-var TEMA_PROXY_PORT = 8889;
-//var MWS_HOST = "212.201.44.161";
-var MWS_HOST = "localhost";
-var MWS_PORT = 10001;
-
-var MAX_MWS_IDS = 1000;
 var MATH_PREFIX = "math";
 
 http.createServer(function(request, response) {
@@ -73,11 +69,9 @@ http.createServer(function(request, response) {
             es_query(tema_text, null, null, tema_from, tema_size,
                 es_response_handler, es_error_handler);
         } else {
-            mws_query(tema_math, MAX_MWS_IDS, function(mws_response) {
-//            var mws_ids = mws_response.data; TODO
-//            var mws_qvar_data = mws_response.qvars;
-                var mws_ids = mws_response;
-                var mws_qvar_data = '';
+            mws_query(tema_math, config.MAX_MWS_IDS, function(mws_response) {
+                var mws_ids = mws_response['ids'];
+                var mws_qvar_data = mws_response['qvars'];
                 es_query(tema_text, mws_ids, mws_qvar_data, tema_from, tema_size,
                     es_response_handler, es_error_handler);
             }, mws_error_handler);
@@ -103,7 +97,7 @@ http.createServer(function(request, response) {
             // TODO
         });
     }
-}).listen(TEMA_PROXY_PORT);
+}).listen(config.TEMA_PROXY_PORT);
 
 
 /**
@@ -171,6 +165,7 @@ function(query_str, mws_ids, mws_qvar_data, from, size, result_callback, error_c
         es_query_document_details(math_elems_per_doc, query_str, function(docs_arr) {
             result_callback({
                 "total" : result.hits.total,
+                "qvars" : mws_qvar_data,
                 "hits" : docs_arr
             });
         }, error_callback);
@@ -215,8 +210,8 @@ var es_query_document_details = function(docs_with_math, query_words, result_cal
                     }
                 },
                 "highlight": {
-                    "pre_tags": ["<div class=\"tema-highlight\">"],
-                    "post_tags": ["</div>"],
+                    "pre_tags": ["<span class=\"tema-highlight\">"],
+                    "post_tags": ["</span>"],
                     "fields": {
                         "text": {}
                     }
@@ -230,12 +225,13 @@ var es_query_document_details = function(docs_with_math, query_words, result_cal
                     "score": hit._score,
                     "metadata": hit._source.metadata,
                     "snippets": hit.highlight.text,
-                    "maths": {}
+                    "maths": []
                 };
                 doc_data["maths"].map(function (math_elem) {
-                    doc.maths[math_elem.math_id] = {
-                        "xml": hit._source.math[math_elem.math_id],
-                        "xpath": math_elem.xpath };
+                    doc.maths.push({
+                        "source" : hit._source.math[math_elem.math_id],
+                        "replaces" : "math" + math_elem.math_id,
+                        "highlight_xpath" : math_elem.xpath });
                 });
                 callback(null, doc);
             }, function(error) {
@@ -267,8 +263,8 @@ function(query_str, limit, result_callback, error_callback) {
                 query_str +
             '</mws:expr></mws:query>';
     var mwsquery_options = {
-        hostname: MWS_HOST,
-        port: MWS_PORT,
+        hostname: config.MWS_HOST,
+        port: config.MWS_PORT,
         path: '/',
         method: 'POST',
         headers: {
