@@ -59,7 +59,6 @@ http.createServer(function(request, response) {
         };
 
         var es_response_handler = function(es_response) {
-            if (DEBUG) util.log(JSON.stringify(es_response));
             var mathExprs = [];
             var hits = es_response['hits'];
             for (var h in hits) {
@@ -360,7 +359,7 @@ function(exprs, depth, cutoffMode, limit,
             ' schema_depth="' + depth + '"' +
             ' answsize="' + limit + '">';
     for (var i in exprs) {
-        expr = exprs[i];
+        var expr = exprs[i];
         schema_query_data += 
             '<mws:expr>' +
                 getCMML(expr) +
@@ -393,7 +392,7 @@ function(exprs, depth, cutoffMode, limit,
                 result['schemata'] = [];
 
                 get_sch_result(json_reply['schemata'], result['schemata'],
-                    exprs, urls);
+                    exprs);
                 if (DEBUG) util.log("Finished schematization");
                 result_callback(result);
             });
@@ -432,7 +431,8 @@ var get_sch_result = function(sch_reply, sch_result, exprs, urls) {
         });
 
         // choose first formula as representative for schematizing
-        sch_result_elem['title'] = s['formulae'][0];
+        var firstExprId = s['formulae'][0];
+        sch_result_elem['title'] = exprs[firstExprId];
 
         sch_result.push(sch_result_elem);
     });
