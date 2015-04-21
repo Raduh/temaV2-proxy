@@ -31,6 +31,8 @@ var qs = require('querystring');
 
 var MATH_PREFIX = "math";
 
+var DEBUG = true;
+
 http.createServer(function(request, response) {
     var process_query = function (query) {
         var tema_text = query.text || "";
@@ -51,8 +53,30 @@ http.createServer(function(request, response) {
             response.end();
         };
 
+        var schema_error_handler = function(error) {
+            error.tema_component = "schema";
+            send_response(error.status_code, error);
+        };
+
         var es_response_handler = function(es_response) {
-            send_response(200, es_response);
+            if (DEBUG) util.log(JSON.stringify(es_response));
+            var mathExprs = [];
+            var hits = es_response['hits'];
+            for (var h in hits) {
+                for (var m in hits[h]['maths']) {
+                    mathExprs.push(hits[h]['maths'][m].source);
+                }
+            }
+
+            var schema_res_callback = function(sch_response) {
+                es_response['total_schemata'] = sch_response['total'];
+                es_response['schemata'] = sch_response['schemata'];
+                send_response(200, es_response);
+            }
+
+            schema_query(mathExprs, config.SCHEMA_DEPTH,
+                config.SCHEMA_CUTOFF_MODE, config.SCHEMA_LIMIT,
+                schema_res_callback, schema_error_handler);
         }
 
         var es_error_handler = function(error) {
@@ -219,6 +243,8 @@ var es_query_document_details = function(docs_with_math, query_words, result_cal
                 "_source": source_filter
             });
             es.query(esquery, function (result) {
+                if (result.hits.total == 0) return;
+
                 var hit = result.hits.hits[0];
                 var doc = {
                     "id" : doc_data["doc_id"],
@@ -310,4 +336,114 @@ function(query_str, limit, result_callback, error_callback) {
 var simplify_mathelem = function(mws_id) {
     var simplified_arr = mws_id.split("#");
     return simplified_arr[simplified_arr.length - 1];
+}
+
+var schema_query =
+function(exprs, depth, cutoffMode, limit,
+        result_callback, error_callback) {
+
+    if (DEBUG) util.log("Got " + exprs.length + " exprs");
+
+    if (exprs.length == 0) {
+        var reply = {
+            'total' : 0,
+            'schemata' : []
+        };
+        result_callback(reply);
+        return;
+    }
+
+    var schema_query_data =
+        '<mws:query' +
+            ' output="json" ' + 
+            ' cutoff_mode="' + cutoffMode + '"' +
+            ' schema_depth="' + depth + '"' +
+            ' answsize="' + limit + '">';
+    for (var i in exprs) {
+        expr = exprs[i];
+        schema_query_data += 
+            '<mws:expr>' +
+                getCMML(expr) +
+            '</mws:expr>';
+    }
+    schema_query_data += '</mws:query>';
+
+    var schema_query_options = {
+        hostname: config.SCHEMA_HOST,
+        port: config.SCHEMA_PORT,
+        path: '/',
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/xml',
+            'Content-Length': Buffer.byteLength(schema_query_data, 'utf8')
+        }
+    };
+
+    var req = http.request(schema_query_options, function(response) {
+        if (response.statusCode == 200) {
+            var raw_reply = '';
+            response.on('data', function (chunk) {
+                raw_reply += chunk;
+            });
+            response.on('end', function () {
+                var json_reply = JSON.parse(raw_reply);
+                
+                var result = {};
+                result['total'] = json_reply['total'];
+                result['schemata'] = [];
+
+                get_sch_result(json_reply['schemata'], result['schemata'],
+                    exprs, urls);
+                if (DEBUG) util.log("Finished schematization");
+                result_callback(result);
+            });
+        } else {
+            var raw_data = '';
+            response.on('data', function (chunk) {
+                raw_data += chunk;
+            });
+            response.on('end', function () {
+                var json_reply = {
+                    status_code : response.statusCode,
+                    data : raw_reply
+                };
+                error_callback(json_reply);
+            });
+        }
+    });
+
+    req.on('error', function(error) {
+        error.status_code = 500;
+        error_callback(error);
+    });
+
+    req.write(schema_query_data);
+    req.end();
 };
+
+var get_sch_result = function(sch_reply, sch_result, exprs, urls) {
+    sch_reply.map(function(s) {
+        var sch_result_elem = {};
+        sch_result_elem['coverage'] = s['coverage'];
+
+        sch_result_elem['subst'] = [];
+        s['subst'].map(function(subst) {
+            sch_result_elem['subst'].push(subst);
+        });
+
+        // choose first formula as representative for schematizing
+        sch_result_elem['title'] = s['formulae'][0];
+
+        sch_result.push(sch_result_elem);
+    });
+};
+
+function getCMML(expr) {
+    var CMML_REGEX =
+        /<annotation-xml[^>]*Content[^>]*>(.*?)<\/annotation-xml>/g;
+    var match = CMML_REGEX.exec(expr);
+    if (match == null) return "";
+    else return match[1];
+}
+
+
